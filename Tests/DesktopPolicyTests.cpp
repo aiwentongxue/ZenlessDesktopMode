@@ -6,12 +6,10 @@
 using zzz::Layout;
 
 int main() {
-    assert(zzz::InitialDesktopLayout(Layout::unknown, false) == Layout::unknown);
-    assert(zzz::InitialDesktopLayout(Layout::touch, false) == Layout::keyboardMouse);
-    assert(zzz::InitialDesktopLayout(Layout::touch, true) == Layout::controller);
-    assert(zzz::InitialDesktopLayout(Layout::keyboardMouse, true) == Layout::unknown);
-    assert(zzz::InitialDesktopLayout(Layout::controller, true) == Layout::unknown);
-    assert(zzz::InitialDesktopLayout(Layout::controller, false) == Layout::keyboardMouse);
+    assert(zzz::InitialDesktopLayout(Layout::unknown) == Layout::unknown);
+    assert(zzz::InitialDesktopLayout(Layout::touch) == Layout::keyboardMouse);
+    assert(zzz::InitialDesktopLayout(Layout::keyboardMouse) == Layout::unknown);
+    assert(zzz::InitialDesktopLayout(Layout::controller) == Layout::unknown);
     assert(!zzz::IsDesktopLayout(Layout::unknown) && !zzz::IsDesktopLayout(Layout::touch));
     assert(zzz::IsDesktopLayout(Layout::controller) && zzz::IsDesktopLayout(Layout::keyboardMouse));
 

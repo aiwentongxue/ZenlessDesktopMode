@@ -17,10 +17,8 @@ private:
     bool wasHidden_ = false;
 };
 
-inline Layout InitialDesktopLayout(Layout current, bool hasController) {
-    if (current == Layout::unknown || current == Layout::keyboardMouse) return Layout::unknown;
-    if (current == Layout::controller) return hasController ? Layout::unknown : Layout::keyboardMouse;
-    return hasController ? Layout::controller : Layout::keyboardMouse;
+inline Layout InitialDesktopLayout(Layout current) {
+    return current == Layout::touch ? Layout::keyboardMouse : Layout::unknown;
 }
 
 inline bool IsDesktopLayout(Layout layout) {

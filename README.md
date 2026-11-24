@@ -8,11 +8,13 @@ ZenlessDesktopMode 在 PlayCover 中启用《绝区零》iOS 客户端自带的�
 
 ## 安装
 
-1. 从 [最新 Release](https://github.com/aiwentongxue/ZenlessDesktopMode/releases/latest) 下载 `libZenlessDesktopMode.dylib`，然后退出游戏。
+1. 下载 `libZenlessDesktopMode.dylib`，然后退出游戏。[最新 Release](https://github.com/aiwentongxue/ZenlessDesktopMode-Private/releases/latest)
 2. 在 PlayCover 的游戏设置中打开插件列表，备份并移除旧的 PC 模式插件或同名测试插件，再导入新版 dylib。
 3. 关闭该游戏的 PlayCover 键盘映射，保持内置鼠标支持开启，再启动游戏。
 
-启动时会沿用已保存的桌面布局。原设置为触屏时，已连接手柄就启动为手柄布局，其余情况启动为键鼠布局。手柄断开后会切回键鼠。要回退，退出游戏后移除本插件，再导入备份的 dylib。
+游戏原先保存为触屏布局时，插件会在登录页提前选用键鼠布局。冷启动只点击「进入游戏」，街区会直接显示 `Tab`、`M` 等键鼠提示。已保存的桌面布局作为下次启动的初始选择，实际输入可随时切换键鼠和手柄。手柄断开后会切回键鼠。
+
+回退时先退出游戏，再从 PlayCover 的插件列表移除本插件，重新导入备份的 dylib。
 
 ## 输入与光标
 
@@ -47,7 +49,7 @@ ZZZDM_CURSOR_PNG="/path/to/cursor.png" ./Scripts/build.sh .build/with-cursor
 
 ## 输入诊断
 
-在光标配置目录创建空文件 `diagnostics`，重启游戏，即可查看布局切换、光标回中、加载状态和轮盘选中项。测试完成后移走该文件并重启游戏。
+在光标配置目录创建空文件 `diagnostics`，重启游戏，即可查看布局切换、光标回中、加载状态和轮盘选中项。`startup preset selected keyboard and mouse` 表示启动时已从触屏布局切换为键鼠。测试完成后移走该文件并重启游戏。
 
 ```sh
 log stream --style compact --predicate 'process == "ZenlessZoneZero" AND eventMessage CONTAINS "ZenlessDesktopMode"'

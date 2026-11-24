@@ -270,11 +270,9 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
     zzz::PointerActivity _pointerActivity;
     NSMapTable<GCController *, ZZZDMControllerState *> *_controllerStates;
     zzz::Layout _layout;
-    bool _selectedStartupLayout;
     bool _switchingLayout;
     int _lastCursorState;
     bool _captured;
-    CFTimeInterval _nextLayoutCheck;
     CFTimeInterval _ignoreMouseMotionUntil;
 }
 
@@ -699,7 +697,7 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
 }
 
 - (void)controllerChanged:(GCController *)controller {
-    if (![self controllerInput:controller] || !_selectedStartupLayout || _layout != zzz::Layout::keyboardMouse) return;
+    if (![self controllerInput:controller] || _layout != zzz::Layout::keyboardMouse) return;
     id macApp = Send(NSClassFromString(@"NSApplication"), "sharedApplication");
     if (Send<BOOL>(macApp, "isActive") && !CGRectIsEmpty(Viewport(_gameWindow, _gameView))) {
         [self switchLayout:zzz::Layout::controller source:"controller"];
@@ -707,7 +705,14 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
 }
 
 - (void)frame:(CADisplayLink *)link {
-    const auto input = zzz::ReadGameInput();
+    auto input = zzz::ReadGameInput();
+    // The startup preset must be ready while the login screen is still open.
+    // Window focus only controls whether events and pointer capture are routed.
+    const auto initial = zzz::InitialDesktopLayout(input.layout);
+    if (initial != zzz::Layout::unknown && zzz::SelectGameLayout(initial)) {
+        input = zzz::ReadGameInput();
+        if (Diagnostics()) NSLog(@"[ZenlessDesktopMode] startup preset selected keyboard and mouse");
+    }
     id macApp = Send(NSClassFromString(@"NSApplication"), "sharedApplication");
     id window = Send(macApp, "keyWindow");
     UIView *view = Send<BOOL>(macApp, "isActive") ? GameView() : nil;
@@ -723,18 +728,11 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
         hasController |= controller.extendedGamepad != nil;
         controllerActivity |= [self controllerInput:controller];
     }
-    if (focused && _layout != zzz::Layout::unknown) {
-        if ((!_selectedStartupLayout || _layout == zzz::Layout::touch) && link.timestamp >= _nextLayoutCheck) {
-            _nextLayoutCheck = link.timestamp + 0.4;
-            const auto preferred = zzz::InitialDesktopLayout(_layout, hasController);
-            _selectedStartupLayout = preferred == zzz::Layout::unknown || [self switchLayout:preferred source:"startup"];
-            if (_layout != input.layout) return;
-        } else if (_selectedStartupLayout) {
-            if (_layout == zzz::Layout::controller && !hasController &&
-                [self switchLayout:zzz::Layout::keyboardMouse source:"disconnected controller"]) return;
-            if (_layout == zzz::Layout::keyboardMouse && controllerActivity &&
-                [self switchLayout:zzz::Layout::controller source:"controller"]) return;
-        }
+    if (focused) {
+        if (_layout == zzz::Layout::controller && !hasController &&
+            [self switchLayout:zzz::Layout::keyboardMouse source:"disconnected controller"]) return;
+        if (_layout == zzz::Layout::keyboardMouse && controllerActivity &&
+            [self switchLayout:zzz::Layout::controller source:"controller"]) return;
     }
     [self updatePointer:input];
     if (_captured) zzz::AdvanceCameraZoom(link.targetTimestamp - link.timestamp);

@@ -8,7 +8,7 @@ ZenlessDesktopMode 在 PlayCover 中启用《绝区零》iOS 客户端自带的�
 
 ## 安装
 
-1. 下载 `libZenlessDesktopMode.dylib`，然后退出游戏。[最新 Release](https://github.com/aiwentongxue/ZenlessDesktopMode-Private/releases/latest)
+1. 下载 `libZenlessDesktopMode.dylib`，然后退出游戏。[最新 Release](https://github.com/aiwentongxue/ZenlessDesktopMode/releases/latest)
 2. 在 PlayCover 的游戏设置中打开插件列表，备份并移除旧的 PC 模式插件或同名测试插件，再导入新版 dylib。
 3. 关闭该游戏的 PlayCover 键盘映射，保持内置鼠标支持开启，再启动游戏。
 

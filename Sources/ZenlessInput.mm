@@ -3,6 +3,7 @@
 
 #include "GameInput.hpp"
 #include "MachOImage.hpp"
+#include "TextInputFocus.hpp"
 
 #include <array>
 #include <cstring>
@@ -78,7 +79,7 @@ bool loadingSupported;
 bool shortcutWheelSupported;
 
 id GameKeyCommands(id view, SEL selector) {
-    return keyboardRouteActive ? @[] : originalKeyCommands(view, selector);
+    return keyboardRouteActive && !desktop::TextInputFocused() ? @[] : originalKeyCommands(view, selector);
 }
 
 uintptr_t ReadPointer(uintptr_t at) {

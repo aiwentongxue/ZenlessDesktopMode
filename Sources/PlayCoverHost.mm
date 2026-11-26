@@ -8,6 +8,7 @@
 #import <objc/runtime.h>
 
 #include "DesktopPolicy.hpp"
+#include "TextInputFocus.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -277,6 +278,7 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
 }
 
 - (void)start {
+    desktop::ObserveTextInputFocus();
     InstallGameCursor();
     _controllerStates = [NSMapTable weakToStrongObjectsMapTable];
     _cameraGain = CameraGain();
@@ -397,6 +399,11 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
 
     const auto type = Send<NSUInteger>(event, "type");
     if (type == KeyDown || type == KeyUp || type == FlagsChanged) {
+        if (desktop::TextInputFocused()) {
+            [self stopShortcutWheel];
+            [self releaseKeyboard];
+            return event;
+        }
         return _keyboardRelay && [self keyboardEvent:event type:type] ? nil : event;
     }
     if (_wheelCursorHidden) {
@@ -580,7 +587,9 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
     _keyboardRelay = desktop && input.keyboardBridged;
     zzz::SetKeyboardRouteActive(_keyboardRelay);
     _mouseRelay = desktop && input.mouseBridged && _layout == zzz::Layout::keyboardMouse;
-    if (!_keyboardRelay) [self releaseKeyboard];
+    const bool editing = desktop::TextInputFocused();
+    if (editing) [self stopShortcutWheel];
+    if (!_keyboardRelay || editing) [self releaseKeyboard];
     if (!_mouseRelay) [self releaseMouse];
     if (_mouseRelay) _screenSize = zzz::InputScreenSize();
     [self trackingWindow:desktop ? _gameWindow : nil];

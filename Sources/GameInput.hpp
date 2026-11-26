@@ -27,9 +27,6 @@ void QueueMouse(const MouseState &state);
 bool ShortcutWheelOpen();
 int SelectShortcutWheelDirection(const std::array<float, 2> &direction);
 bool ConfirmShortcutWheel(int selection);
-void SetCameraZoomActive(bool active);
-void ZoomGameCamera(float steps);
-void AdvanceCameraZoom(float elapsed);
 std::array<int, 2> InputScreenSize();
 std::array<int, 2> ReadMovementKeys();
 

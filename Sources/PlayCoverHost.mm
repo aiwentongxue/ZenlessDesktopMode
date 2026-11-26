@@ -441,10 +441,6 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
         if (Diagnostics() && y != 0) NSLog(@"[ZenlessDesktopMode] wheel y=%.2f captured=%d", y, _captured);
         _mouse.scrollX += x * factor;
         _mouse.scrollY += y * factor;
-        if (_captured && !Send<NSUInteger>(event, "momentumPhase")) {
-            const double ticks = precise ? 1.0 / 16.0 : 1.0;
-            zzz::ZoomGameCamera(y * ticks);
-        }
     } else {
         const double dx = Send<CGFloat>(event, "deltaX");
         const double dy = Send<CGFloat>(event, "deltaY");
@@ -497,7 +493,6 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
         if (associatePointer(true) != kCGErrorSuccess) return;
         showPointer(kCGNullDirectDisplay);
         _captured = false;
-        zzz::SetCameraZoomActive(false);
         _mouse.dx = _mouse.dy = 0;
         _captureWarp.reset();
     }
@@ -516,7 +511,6 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
         return;
     }
     _captured = true;
-    zzz::SetCameraZoomActive(true);
     _captureStarted = NSProcessInfo.processInfo.systemUptime;
     _capturePoint = needsWarp ? center : before;
     _captureWarp.reset(_capturePoint.x - before.x, _capturePoint.y - before.y);
@@ -705,6 +699,7 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
 }
 
 - (void)frame:(CADisplayLink *)link {
+    (void)link;
     auto input = zzz::ReadGameInput();
     // The startup preset must be ready while the login screen is still open.
     // Window focus only controls whether events and pointer capture are routed.
@@ -735,7 +730,6 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
             [self switchLayout:zzz::Layout::controller source:"controller"]) return;
     }
     [self updatePointer:input];
-    if (_captured) zzz::AdvanceCameraZoom(link.targetTimestamp - link.timestamp);
 }
 
 @end

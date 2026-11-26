@@ -4,11 +4,8 @@
 #include "GameInput.hpp"
 #include "MachOImage.hpp"
 
-#include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstring>
-#include <mutex>
 
 namespace zzz {
 namespace {
@@ -42,9 +39,6 @@ constexpr uint32_t InputTimeSlot = 0x1b479438;
 constexpr uint32_t AllocateDeviceSlot = 0x1b479448;
 constexpr uint32_t QueueEventSlot = 0x1b479450;
 constexpr uint32_t ScreenSizeTable = 0x1b46fee8;
-constexpr uint32_t ReadFieldOfViewSlot = 0x1b46ff88;
-constexpr uint32_t SetFieldOfViewSlot = 0x1b46ff90;
-constexpr uint32_t MainCameraSlot = 0x1b470208;
 constexpr uint32_t NewManagedString = 0x130a6e08;
 constexpr uint32_t NotifyDevice = 0x12efeb38;
 constexpr uint32_t FindManagedMethod = 0x140aff14;
@@ -82,40 +76,6 @@ bool layoutSettingSupported;
 int syncedLayoutSetting;
 bool loadingSupported;
 bool shortcutWheelSupported;
-
-using MainCamera = uintptr_t (*)();
-using ReadFieldOfView = float (*)(uintptr_t);
-using SetFieldOfView = void (*)(uintptr_t, float);
-MainCamera mainCamera;
-ReadFieldOfView readFieldOfView;
-SetFieldOfView setFieldOfView;
-bool cameraZoomInstalled;
-std::mutex cameraZoomLock;
-struct {
-    uintptr_t camera = 0;
-    float baseFov = 0;
-    float magnification = 1;
-    float target = 1;
-    bool active = false;
-} cameraZoom;
-
-float ZoomedFieldOfView(float angle, float magnification) {
-    constexpr float HalfDegree = 0.00872664626F;
-    return std::atan(std::tan(angle * HalfDegree) / magnification) / HalfDegree;
-}
-
-void GameFieldOfView(uintptr_t camera, float angle) {
-    {
-        const std::lock_guard lock(cameraZoomLock);
-        if (camera && camera == cameraZoom.camera && angle > 0 && angle < 179) {
-            cameraZoom.baseFov = angle;
-            if (cameraZoom.active) {
-                angle = ZoomedFieldOfView(angle, cameraZoom.magnification);
-            }
-        }
-    }
-    setFieldOfView(camera, angle);
-}
 
 id GameKeyCommands(id view, SEL selector) {
     return keyboardRouteActive ? @[] : originalKeyCommands(view, selector);
@@ -220,25 +180,6 @@ bool CanCall(uintptr_t address) {
     return address && image.contains("__TEXT", "__text", image.offset(address), sizeof(uint32_t));
 }
 
-void InstallCameraZoom() {
-    const MachOImage image(*engineHeader, slideAddress);
-    constexpr std::array Setter{0xb0042f88u, 0x91278108u, 0xf942d901u, 0xd61f0020u};
-    const auto nativeGetter = image.address(0x141146c4);
-    const auto nativeMain = image.address(0x14119518);
-    auto nativeSetter = image.address(0x14114764);
-    if (!image.matchesCode(0x12e7eeec, Setter) ||
-        !image.contains("__DATA", "__common", ReadFieldOfViewSlot, 2 * sizeof(uintptr_t)) ||
-        !image.contains("__DATA", "__common", MainCameraSlot, sizeof(uintptr_t)) ||
-        ReadPointer(image.address(ReadFieldOfViewSlot)) != nativeGetter ||
-        ReadPointer(image.address(MainCameraSlot)) != nativeMain) return;
-    auto *slot = reinterpret_cast<uintptr_t *>(image.address(SetFieldOfViewSlot));
-    mainCamera = reinterpret_cast<MainCamera>(nativeMain);
-    readFieldOfView = reinterpret_cast<ReadFieldOfView>(nativeGetter);
-    setFieldOfView = reinterpret_cast<SetFieldOfView>(nativeSetter);
-    cameraZoomInstalled = __atomic_compare_exchange_n(slot, &nativeSetter,
-        reinterpret_cast<uintptr_t>(GameFieldOfView), false, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
-}
-
 const uintptr_t *ManagedMethod(const char *module, const char *space, const char *type, const char *name,
                               unsigned arguments) {
     using Find = const uintptr_t *(*)(const char *, const char *, const char *, const char *);
@@ -286,7 +227,6 @@ void TryDesktopDevices() {
     if (!ReadPointer(services + CurrentMouse)) {
         mouseId = add(CurrentMouse, R"({"interface":"ZenlessDesktopMode","type":"Mouse","product":"Mouse"})");
     }
-    if (mouseId) InstallCameraZoom();
     NSLog(@"[ZenlessDesktopMode] input devices keyboard=%s mouse=%s",
           keyEvent ? "native edges" : "unavailable",
           mouseId ? "bridged" : ReadPointer(services + CurrentMouse) ? "native" : "unavailable");
@@ -482,54 +422,6 @@ bool ConfirmShortcutWheel(int selection) {
     // Invoke the original button, including the action configured for this slot in game.
     reinterpret_cast<void (*)(uintptr_t, const void *)>(slideAddress + ActivateWheelButton)(button, nullptr);
     return true;
-}
-
-void SetCameraZoomActive(bool active) {
-    if (!cameraZoomInstalled) return;
-    const uintptr_t current = mainCamera();
-    float angle;
-    {
-        const std::lock_guard lock(cameraZoomLock);
-        if (current != cameraZoom.camera) cameraZoom = {};
-        cameraZoom.active = active;
-        if (!current || current != cameraZoom.camera || cameraZoom.magnification == 1) return;
-        angle = active ? ZoomedFieldOfView(cameraZoom.baseFov, cameraZoom.magnification) : cameraZoom.baseFov;
-    }
-    setFieldOfView(current, angle);
-}
-
-void ZoomGameCamera(float steps) {
-    if (!cameraZoomInstalled || !std::isfinite(steps) || steps == 0) return;
-    const uintptr_t current = mainCamera();
-    if (!current) return;
-    const std::lock_guard lock(cameraZoomLock);
-    if (!cameraZoom.active) return;
-    if (current != cameraZoom.camera) {
-        const float base = readFieldOfView(current);
-        if (!(base >= 20 && base <= 100)) return;
-        cameraZoom = {current, base, 1, 1, true};
-    }
-    const float factor = std::exp(0.095F * std::clamp(steps, -10.0F, 10.0F));
-    cameraZoom.target = std::clamp(cameraZoom.target * factor, 0.75F, 1.45F);
-}
-
-void AdvanceCameraZoom(float elapsed) {
-    if (!cameraZoomInstalled || !std::isfinite(elapsed) || elapsed <= 0) return;
-    uintptr_t current;
-    float angle;
-    {
-        const std::lock_guard lock(cameraZoomLock);
-        if (!cameraZoom.active || cameraZoom.magnification == cameraZoom.target) return;
-        current = mainCamera();
-        if (!current || current != cameraZoom.camera) return;
-        const float follow = 1 - std::exp(-std::min(elapsed, 0.05F) / 0.075F);
-        cameraZoom.magnification += (cameraZoom.target - cameraZoom.magnification) * follow;
-        if (std::abs(cameraZoom.target - cameraZoom.magnification) < 0.0005F) {
-            cameraZoom.magnification = cameraZoom.target;
-        }
-        angle = ZoomedFieldOfView(cameraZoom.baseFov, cameraZoom.magnification);
-    }
-    setFieldOfView(current, angle);
 }
 
 std::array<int, 2> InputScreenSize() {

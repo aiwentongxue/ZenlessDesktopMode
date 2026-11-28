@@ -269,6 +269,8 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
     int _wheelSelection;
     zzz::PointerVisibility _visibility;
     zzz::PointerActivity _pointerActivity;
+    zzz::ControllerSwitchRequest _controllerSwitch;
+    std::array<bool, 4> _lastControllerStatus;
     NSMapTable<GCController *, ZZZDMControllerState *> *_controllerStates;
     zzz::Layout _layout;
     bool _switchingLayout;
@@ -327,8 +329,10 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
     if (!key) return false;
     const NSUInteger flags = Send<NSUInteger>(event, "modifierFlags");
     if (key == 309 || key == 310) return false;
-    if (_layout == zzz::Layout::controller && StartsKeyboardInput(event, type, key, flags)) {
-        [self switchLayout:zzz::Layout::keyboardMouse source:"keyboard"];
+    if ((_layout == zzz::Layout::controller || _controllerSwitch.pending()) &&
+        StartsKeyboardInput(event, type, key, flags)) {
+        _controllerSwitch.cancel();
+        if (_layout == zzz::Layout::controller) [self switchLayout:zzz::Layout::keyboardMouse source:"keyboard"];
     }
     bool changed = false;
     const auto update = [&](unsigned code, bool pressed) {
@@ -400,6 +404,7 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
     const auto type = Send<NSUInteger>(event, "type");
     if (type == KeyDown || type == KeyUp || type == FlagsChanged) {
         if (desktop::TextInputFocused()) {
+            _controllerSwitch.cancel();
             [self stopShortcutWheel];
             [self releaseKeyboard];
             return event;
@@ -410,8 +415,10 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
         [self updateWheelSelectionAt:PointerLocation()];
         return nil;
     }
-    if (_layout == zzz::Layout::controller && [self startsMouseInput:event type:type point:PointerLocation()]) {
-        [self switchLayout:zzz::Layout::keyboardMouse source:"mouse"];
+    if ((_layout == zzz::Layout::controller || _controllerSwitch.pending()) &&
+        [self startsMouseInput:event type:type point:PointerLocation()]) {
+        _controllerSwitch.cancel();
+        if (_layout == zzz::Layout::controller) [self switchLayout:zzz::Layout::keyboardMouse source:"mouse"];
     }
     if (type == CursorUpdate || type == MouseEntered || type == MouseExited) {
         [self updateCursorAt:PointerLocation() force:true];
@@ -573,6 +580,7 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
     zzz::SetKeyboardRouteActive(false);
     _visibility.update(false, false, true);
     _pointerActivity.reset();
+    _controllerSwitch.cancel();
 }
 
 - (void)configureInput:(const zzz::InputState &)input focused:(bool)focused {
@@ -703,7 +711,7 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
     if (![self controllerInput:controller] || _layout != zzz::Layout::keyboardMouse) return;
     id macApp = Send(NSClassFromString(@"NSApplication"), "sharedApplication");
     if (Send<BOOL>(macApp, "isActive") && !CGRectIsEmpty(Viewport(_gameWindow, _gameView))) {
-        [self switchLayout:zzz::Layout::controller source:"controller"];
+        _controllerSwitch.request();
     }
 }
 
@@ -732,12 +740,21 @@ const auto showPointer = reinterpret_cast<CursorDisplay>(dlsym(RTLD_DEFAULT, "CG
         hasController |= controller.extendedGamepad != nil;
         controllerActivity |= [self controllerInput:controller];
     }
-    if (focused) {
-        if (_layout == zzz::Layout::controller && !hasController &&
-            [self switchLayout:zzz::Layout::keyboardMouse source:"disconnected controller"]) return;
-        if (_layout == zzz::Layout::keyboardMouse && controllerActivity &&
-            [self switchLayout:zzz::Layout::controller source:"controller"]) return;
+    if (focused && _layout == zzz::Layout::controller && !hasController &&
+        [self switchLayout:zzz::Layout::keyboardMouse source:"disconnected controller"]) return;
+    if (controllerActivity) _controllerSwitch.request();
+    const bool ready = zzz::StartupControllerReady();
+    const bool canSwitch = focused && hasController && _layout == zzz::Layout::keyboardMouse;
+    if (Diagnostics()) {
+        const std::array status{focused, hasController, ready, _controllerSwitch.pending()};
+        if (status != _lastControllerStatus) {
+            _lastControllerStatus = status;
+            NSLog(@"[ZenlessDesktopMode] controller focused=%d connected=%d startup-ready=%d requested=%d",
+                  focused, hasController, ready, _controllerSwitch.pending());
+        }
     }
+    if (_controllerSwitch.takeIfReady(canSwitch, ready) &&
+        [self switchLayout:zzz::Layout::controller source:"controller"]) return;
     [self updatePointer:input];
 }
 

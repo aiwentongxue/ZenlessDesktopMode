@@ -20,6 +20,7 @@ struct InputState {
 
 bool StartGameInput(const mach_header_64 &image, intptr_t slide);
 InputState ReadGameInput();
+bool StartupControllerReady();
 bool SelectGameLayout(Layout layout);
 void SetKeyboardRouteActive(bool active);
 void SendGameKey(unsigned key, bool pressed);

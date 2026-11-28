@@ -13,6 +13,36 @@ int main() {
     assert(!zzz::IsDesktopLayout(Layout::unknown) && !zzz::IsDesktopLayout(Layout::touch));
     assert(zzz::IsDesktopLayout(Layout::controller) && zzz::IsDesktopLayout(Layout::keyboardMouse));
 
+    using Title = zzz::StartupControllerReadiness::Title;
+    zzz::StartupControllerReadiness startup;
+    assert(!startup.update(Title::absent));
+    assert(!startup.update(Title::opening));
+    assert(!startup.update(Title::loading));
+    assert(!startup.update(Title::loading));
+    assert(startup.update(Title::opening)); // The native progress widget has gone away.
+    assert(startup.update(Title::ready));
+    assert(startup.update(Title::absent));
+    assert(!startup.update(Title::loading)); // A later load can show the progress widget again.
+    assert(startup.update(Title::ready));
+    zzz::StartupControllerReadiness alreadyReady;
+    assert(alreadyReady.update(Title::ready)); // Resources that finish before the first frame.
+    zzz::StartupControllerReadiness skippedTitle;
+    assert(!skippedTitle.update(Title::opening));
+    assert(skippedTitle.update(Title::absent)); // The game has left the startup page.
+
+    zzz::ControllerSwitchRequest request;
+    request.request();
+    assert(!request.takeIfReady(true, false));
+    assert(request.pending());
+    assert(request.takeIfReady(true, true));
+    assert(!request.takeIfReady(true, true));
+    request.request();
+    assert(!request.takeIfReady(false, true)); // Focus loss or device disconnection.
+    assert(!request.pending());
+    request.request();
+    request.cancel(); // The player went back to keyboard and mouse while waiting.
+    assert(!request.takeIfReady(true, true));
+
     zzz::ControllerActivity controller;
     assert(!controller.update(0, {0.11F, 0.01F, 0, 0}));
     assert(controller.update(0, {0.35F, 0, 0, 0}));

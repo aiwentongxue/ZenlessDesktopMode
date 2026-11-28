@@ -25,6 +25,45 @@ inline bool IsDesktopLayout(Layout layout) {
     return layout == Layout::keyboardMouse || layout == Layout::controller;
 }
 
+class StartupControllerReadiness {
+public:
+    enum class Title { absent, opening, loading, ready };
+
+    bool update(Title title) {
+        if (title != Title::absent) sawTitle_ = true;
+        if (title == Title::loading) {
+            sawProgress_ = true;
+            return false;
+        }
+        if (title == Title::ready || sawProgress_ || (sawTitle_ && title == Title::absent)) {
+            ready_ = true;
+        }
+        return ready_;
+    }
+
+private:
+    bool sawTitle_ = false;
+    bool sawProgress_ = false;
+    bool ready_ = false;
+};
+
+class ControllerSwitchRequest {
+public:
+    void request() { pending_ = true; }
+    void cancel() { pending_ = false; }
+    bool pending() const { return pending_; }
+
+    bool takeIfReady(bool canSwitch, bool ready) {
+        if (!canSwitch) cancel();
+        if (!ready || !pending_) return false;
+        cancel();
+        return true;
+    }
+
+private:
+    bool pending_ = false;
+};
+
 class ControllerActivity {
 public:
     bool update(uint32_t buttons, const std::array<float, 4> &axes) {

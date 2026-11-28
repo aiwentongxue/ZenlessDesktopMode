@@ -2,6 +2,7 @@
 #import <objc/runtime.h>
 
 #include "GameInput.hpp"
+#include "DesktopPolicy.hpp"
 #include "MachOImage.hpp"
 #include "TextInputFocus.hpp"
 
@@ -248,6 +249,7 @@ void ReadCursor(InputState &state) {
     state.cursorVisible = !state.cursorLocked && reinterpret_cast<bool (*)()>(table[0])();
 }
 
+
 } // namespace
 
 bool StartGameInput(const mach_header_64 &header, intptr_t slide) {
@@ -346,6 +348,43 @@ InputState ReadGameInput() {
     state.loading = state.layout == Layout::keyboardMouse && LoadingUIVisible();
     ReadCursor(state);
     return state;
+}
+
+// Read the title page's own progress control. The scene-transition pop-up does
+// not remain visible while the startup configuration bar is on screen.
+bool StartupControllerReady() {
+    if (!NSThread.isMainThread || !LayoutReady()) return false;
+    if (!loadingSupported) return true;
+
+    static StartupControllerReadiness readiness;
+    using Title = StartupControllerReadiness::Title;
+    if (!FindUIController("UILoginPageController", 0x10)) {
+        if (readiness.update(Title::absent)) return true;
+        return FindUIController("UIMainCityPageController", 0x10) && readiness.update(Title::ready);
+    }
+    static const char *const core = "UnityEngine.CoreModule.dll";
+    static const auto *find = ManagedMethod(core, "UnityEngine", "GameObject", "Find", 1);
+    static const auto *transform = ManagedMethod(core, "UnityEngine", "GameObject", "get_transform", 0);
+    static const auto *findChild = ManagedMethod(core, "UnityEngine", "Transform", "Find", 1);
+    static const auto *getGameObject = ManagedMethod(core, "UnityEngine", "Component", "get_gameObject", 0);
+    if (!find || !transform || !findChild || !getGameObject) return true;
+
+    using Get = void *(*)(void *, const void *);
+    using FindChild = void *(*)(void *, void *, const void *);
+    const auto makeString = reinterpret_cast<void *(*)(const char *)>(slideAddress + NewManagedString);
+    auto *path = makeString("/UIRootProxy/UICanvas/UIRoot/UILogin-Wrapper/AdaptRoot/"
+                            "UILogin-Wrapper/SafeArea/UILogin");
+    void *title = path ? reinterpret_cast<Get>(find[0])(path, find) : nullptr;
+    void *parent = title ? reinterpret_cast<Get>(transform[0])(title, transform) : nullptr;
+    auto visible = [&](const char *relativePath) {
+        auto name = parent ? makeString(relativePath) : nullptr;
+        void *node = name ? reinterpret_cast<FindChild>(findChild[0])(parent, name, findChild) : nullptr;
+        void *object = node ? reinterpret_cast<Get>(getGameObject[0])(node, getGameObject) : nullptr;
+        return IsActiveGameObject(reinterpret_cast<uintptr_t>(object));
+    };
+    if (visible("ResourceLoadWidget/Progress")) return readiness.update(Title::loading);
+    if (visible("ResourceLoadWidget/EnterGameMaskBtn")) return readiness.update(Title::ready);
+    return readiness.update(Title::opening);
 }
 
 bool SelectGameLayout(Layout layout) {
